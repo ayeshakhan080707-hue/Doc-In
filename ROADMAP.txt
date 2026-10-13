@@ -1,0 +1,899 @@
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║           DocIn™ Healthcare Platform — Complete Development Roadmap            ║
+║           SuperAdmin Full Control + Observer Role + Feature Phases             ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  OBSERVER ROLE — PUBLIC + LOGGED-IN READ-ONLY ACCESS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  CONCEPT
+  ─────────────────────────────────────────────────────────────────
+  DocIn platform ka feed aur content bina login ke bhi publicly visible hoga
+  (like Twitter/X). Koi bhi aakar dekh sakta hai kya ho raha hai platform pe.
+
+  Observer 2 tarah ka hoga:
+    1. ANONYMOUS OBSERVER  — Bina account ke, sirf browser se dekh raha hai
+    2. REGISTERED OBSERVER — Account bana liya lekin professional nahi hai
+
+  Jab bhi koi restricted action karna chaye (apply, connect, post, message)
+  toh upgrade prompt aayega — professional account banana hoga.
+
+  ACCESS MATRIX
+  ─────────────────────────────────────────────────────────────────
+
+  Feature                        | No Login | Observer Account | Professional
+  ─────────────────────────────────────────────────────────────────────────────
+  Feed dekh sakta hai            |    ✅    |       ✅         |     ✅
+  Doctor public profiles         |    ✅    |       ✅         |     ✅
+  Job listings dekh sakta hai    |    ✅    |       ✅         |     ✅
+  Hospital profiles              |    ✅    |       ✅         |     ✅
+  Search (doctors/posts/jobs)    |    ✅    |       ✅         |     ✅
+  Clinical cases (PHI removed)   |    ✅    |       ✅         |     ✅
+  Platform news & updates        |    ✅    |       ✅         |     ✅
+  ─────────────────────────────────────────────────────────────────────────────
+  Post karna (feed mein)         |    ❌    |       ❌         |     ✅
+  Like / Comment on posts        |    ❌    |       ❌         |     ✅
+  Doctor se connect karna        |    ❌    |       ❌         |     ✅
+  Message karna                  |    ❌    |       ❌         |     ✅
+  Job apply karna                |    ❌    |       ❌         |     ✅
+  Credential upload              |    ❌    |       ❌         |     ✅
+  Network build karna            |    ❌    |       ❌         |     ✅
+  Notifications receive karna    |    ❌    |       ✅         |     ✅
+  Profile save / bookmarks       |    ❌    |       ✅ (basic) |     ✅
+  ─────────────────────────────────────────────────────────────────────────────
+
+  REGISTRATION FLOW
+  ─────────────────────────────────────────────────────────────────
+  Signup page pe 2 options:
+
+    Option A: "I am a Healthcare Professional"
+              → Select role: Doctor / Hospital Admin / Recruiter
+              → Complete professional profile
+              → Full access immediately (verification badge later)
+
+    Option B: "I want to explore DocIn"
+              → Sirf email + password
+              → OBSERVER role assign
+              → Platform browse kar sako
+              → Jab chahein upgrade karo
+
+  UPGRADE FLOW (Observer → Professional)
+  ─────────────────────────────────────────────────────────────────
+  Observer koi bhi restricted action kare toh yeh modal dikhega:
+
+    ┌─────────────────────────────────────────────────────┐
+    │  🔒  Professional Account Required                  │
+    │                                                     │
+    │  To [apply for jobs / connect / post on DocIn],     │
+    │  you need a verified professional account.          │
+    │                                                     │
+    │  Select your role to upgrade:                       │
+    │  [ 👨‍⚕️ Doctor ]  [ 🏥 Hospital ]  [ 🤝 Recruiter ]  │
+    │                                                     │
+    │  It's free — just complete your professional        │
+    │  profile to get full access.                        │
+    │                               [Cancel]  [Upgrade →] │
+    └─────────────────────────────────────────────────────┘
+
+  ANONYMOUS USER (No Login) EXPERIENCE
+  ─────────────────────────────────────────────────────────────────
+  • Feed publicly visible — posts load without any authentication
+  • Doctor profile pages publicly accessible
+  • Jobs page publicly visible
+  • Search works without login
+  • Any action button (Like, Comment, Connect, Apply) pe click:
+      → "Sign in to interact" prompt with Login / Register buttons
+  • SEO benefit: Google index kar sakta hai public content
+  • Social sharing: Post link share karo — koi bhi dekh sakta hai
+
+  BACKEND IMPLEMENTATION PLAN
+  ─────────────────────────────────────────────────────────────────
+
+  1. User model mein OBSERVER role add karo:
+     role enum: ['OBSERVER', 'DOCTOR', 'HOSPITAL_ADMIN',
+                 'RECRUITER', 'CREDENTIALING_OFFICER', 'SUPER_ADMIN']
+
+  2. New middleware — requireProfessional:
+     Sirf professional roles allow karo restricted endpoints pe
+     (DOCTOR, HOSPITAL_ADMIN, RECRUITER, CREDENTIALING_OFFICER, SUPER_ADMIN)
+
+  3. Public endpoints (no auth needed):
+     GET  /api/posts/feed          → Public feed
+     GET  /api/recruiter/jobs      → Jobs listing
+     GET  /api/doctor/profile/:id  → Public doctor profile
+     GET  /api/search              → Global search
+
+  4. Observer-allowed endpoints (auth optional):
+     GET  /api/chat/notifications  → If logged in as observer
+     GET  /api/network/recommendations → View only
+
+  5. Professional-only endpoints (requireProfessional middleware):
+     POST /api/posts               → Create post
+     POST /api/posts/:id/like      → Like post
+     POST /api/posts/:id/comment   → Comment
+     POST /api/network/request     → Send connection
+     POST /api/chat/messages       → Send message
+     POST /api/jobs/:id/apply      → Apply to job
+     POST /api/credentials/upload  → Upload credential
+
+  FRONTEND IMPLEMENTATION PLAN
+  ─────────────────────────────────────────────────────────────────
+
+  1. App.tsx changes:
+     - Feed, Jobs, Search, Doctor Profile → Public routes (no ProtectedRoute)
+     - Action buttons → Check auth before allowing interaction
+
+  2. New hook — useProfessionalGuard():
+     const { requirePro, showUpgradeModal } = useProfessionalGuard();
+     // Usage: onClick={() => requirePro(() => handleApply(job))}
+     // If observer/no login → show upgrade modal
+     // If professional → run the action
+
+  3. UpgradeModal component:
+     - Shows when observer tries restricted action
+     - Role selection: Doctor / Hospital / Recruiter
+     - Redirects to register with pre-selected role
+
+  4. Navbar update:
+     - Jab logged out ho: "Sign In" + "Join DocIn" buttons visible
+     - Feed aur public pages bina login accessible
+
+  5. PostCard update:
+     - Like/Comment buttons: bina login click → Login prompt
+     - Observer login → Upgrade prompt
+
+  FILES TO CREATE/MODIFY
+  ─────────────────────────────────────────────────────────────────
+  Server:
+    server/src/models/User.ts                    (role enum update)
+    server/src/middlewares/role.middleware.ts     (requireProfessional add)
+    server/src/routes/post.routes.ts             (public GET /feed)
+    server/src/routes/recruiter.routes.ts        (public GET /jobs)
+    server/src/routes/doctor.routes.ts           (public GET /profile/:id)
+    server/src/routes/search.routes.ts           (public GET /)
+
+  Client:
+    client/src/App.tsx                           (public routes)
+    client/src/hooks/useProfessionalGuard.ts     (new hook)
+    client/src/components/common/UpgradeModal.tsx (new component)
+    client/src/components/layout/Navbar.tsx      (login/join buttons)
+    client/src/pages/auth/RegisterPage.tsx       (role selection update)
+    client/src/components/feed/PostCard.tsx      (guard on actions)
+    client/src/pages/jobs/JobsPage.tsx           (guard on apply)
+    client/src/pages/network/NetworkPage.tsx     (guard on connect)
+
+  SUPERADMIN OBSERVER MANAGEMENT
+  ─────────────────────────────────────────────────────────────────
+  • Observer users list dekh sakta hai
+  • Observer ka role upgrade kar sakta hai (to Doctor/Hospital/etc.)
+  • Observer account suspend kar sakta hai (spam prevention)
+  • Observer conversion rate analytics:
+      Total Observers → Upgraded to Professional (% conversion)
+  • Observers who viewed most content (engagement tracking)
+
+  BENEFITS OF THIS APPROACH
+  ─────────────────────────────────────────────────────────────────
+  ✅ SEO — Google public feed index karta hai → more organic traffic
+  ✅ Low friction — Koi bhi aa ke dekh sakta hai, pressure nahi signup ka
+  ✅ Conversion funnel — Observer → action try kare → upgrade naturally
+  ✅ Viral sharing — Posts share ho sakte hain publicly
+  ✅ Genuine users — Jo actually kaam karna chahte hain wo upgrade karte hain
+  ✅ Spam prevention — Observers restricted hain, fake activity nahi
+  ✅ Platform credibility — Public visible content trust build karta hai
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SUPERADMIN — FULL PLATFORM CONTROL (GOD MODE)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+SuperAdmin ka ek dedicated control panel hoga jisme yeh sab kuch hoga:
+
+  USER MANAGEMENT
+  ─────────────────────────────────────────────────────────────────
+  • Har user ko dekh sakta hai (search, filter by role/status/tier)
+  • User create kar sakta hai (kisi bhi role ka)
+  • User ka role change kar sakta hai
+  • User suspend / activate / delete kar sakta hai
+  • Kisi bhi user ki clinical verified seal grant ya revoke kar sakta hai
+  • Kisi bhi user ko Premium Gold de ya wapas le sakta hai
+  • User ki complete profile dekh sakta hai (posts, credentials, connections)
+  • Bulk actions: multiple users select karke suspend/activate/delete
+
+  CREDENTIAL VERIFICATION MANAGEMENT
+  ─────────────────────────────────────────────────────────────────
+  • Poora verification queue dekh sakta hai (SUBMITTED / UNDER_REVIEW)
+  • Kisi bhi credential approve ya reject kar sakta hai
+  • Credentialing officers assign kar sakta hai to specific documents
+  • Credential history + audit trail dekh sakta hai
+  • Fake/fraud credentials flag kar sakta hai
+  • Verification stats: daily/weekly approvals, rejections, pending count
+
+  CONTENT MODERATION
+  ─────────────────────────────────────────────────────────────────
+  • Koi bhi post delete kar sakta hai
+  • PHI-violating posts flag karna aur auto-remove
+  • User ko post karne se temporarily ban kar sakta hai
+  • Reported posts queue manage kar sakta hai
+  • Comments moderation
+  • Reported users queue
+
+  JOB POSTING MANAGEMENT
+  ─────────────────────────────────────────────────────────────────
+  • Koi bhi job posting dekh, edit, close ya delete kar sakta hai
+  • Fake job postings remove kar sakta hai
+  • Job applications statistics dekh sakta hai
+  • Hospital/Recruiter ki job posting rights suspend kar sakta hai
+
+  MESSAGING OVERSIGHT
+  ─────────────────────────────────────────────────────────────────
+  • Reported conversations flag dekh sakta hai
+  • Spam/abusive messaging users ko ban kar sakta hai
+  • (Note: Private messages encrypted — full content access nahi for privacy)
+
+  PLATFORM ANALYTICS (Full Dashboard)
+  ─────────────────────────────────────────────────────────────────
+  • Total users, daily/weekly/monthly growth
+  • Doctor specialty distribution chart
+  • Verification rate (verified vs unverified doctors)
+  • Active jobs count, total applications
+  • Feed engagement: posts per day, likes, comments
+  • Messaging volume
+  • Top active users
+  • Revenue metrics (Gold subscriptions)
+  • Geographic distribution (countries/cities)
+
+  SUBSCRIPTION MANAGEMENT
+  ─────────────────────────────────────────────────────────────────
+  • Manually grant/revoke Gold membership
+  • Set subscription expiry dates
+  • View all Gold members list
+  • Revenue report
+
+  AUDIT LOGS
+  ─────────────────────────────────────────────────────────────────
+  • Har admin action ka record: who did what, when, on which user
+  • Filter logs by date range, action type, admin user
+  • Export logs to CSV
+  • Suspicious activity alerts
+
+  SYSTEM SETTINGS
+  ─────────────────────────────────────────────────────────────────
+  • Platform-wide settings (maintenance mode on/off)
+  • Email template management
+  • Notification settings
+  • Feature flags (enable/disable features platform-wide)
+  • Rate limit settings per role
+  • Allowed file types / size limits
+
+  SECURITY CENTER
+  ─────────────────────────────────────────────────────────────────
+  • Active sessions list for any user
+  • Force logout any user from all devices
+  • Revoke all refresh tokens for a user
+  • View login history (IP, device, time)
+  • Failed login attempts report
+  • Security alerts (brute force, unusual activity)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PHASE 0 — FOUNDATION & SECURITY (Must Do Before Launch)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  STATUS: In Progress / Partially Done
+
+  0.1  Email Service (Nodemailer + SendGrid)
+       - Password reset email with HTML template
+       - Welcome email on new registration
+       - Credential approved / rejected email
+       - Job application status change email
+       - Files: server/src/services/emailService.ts
+       - ENV: EMAIL_FROM, SENDGRID_API_KEY or SMTP_HOST/PORT/USER/PASS
+
+  0.2  Refresh Token Rotation + Revocation
+       - RefreshToken model (hash, userId, expires, revoked: boolean)
+       - On /refresh-token: revoke old token, issue new one
+       - On /logout: mark token revoked in DB
+       - SuperAdmin: force-revoke all sessions for a user
+       - Files: server/src/models/RefreshToken.ts
+                server/src/utils/token.ts (update)
+                server/src/controllers/auth.controller.ts (update)
+
+  0.3  Public Doctor Profile Page ( /profile/:userId )
+       - New route in App.tsx
+       - PublicDoctorProfilePage component
+       - PostCard: author name click → /profile/:authorId
+       - Network: connection "View Profile" button
+       - Increments profileViewsCount on visit
+       - Files: client/src/pages/profile/PublicDoctorProfilePage.tsx
+                client/src/App.tsx (add route)
+
+  0.4  Search Results Page ( /search?q= )
+       - Dedicated SearchResultsPage with tabs: Doctors | Posts | Jobs
+       - Navbar search navigates to /search?q=query
+       - Live search suggestions dropdown in Navbar
+       - Files: client/src/pages/search/SearchResultsPage.tsx
+                client/src/components/layout/Navbar.tsx (update)
+
+  0.5  SuperAdmin — Extended User Management
+       - Bulk user actions (multi-select + bulk suspend/activate)
+       - View any user's full profile, posts, credentials
+       - User create endpoint (POST /admin/users)
+       - Force logout user (revoke all refresh tokens)
+       - Login history per user
+       - Files: server/src/controllers/admin.controller.ts (extend)
+                client/src/pages/panels/SuperAdminPanel.tsx (extend)
+
+  0.6  Audit Log System
+       - AuditLog model: actorId, action, targetType, targetId, meta, ip, timestamp
+       - Auto-log in: credential approve/reject, user suspend, role change
+       - Admin panel: audit trail tab with date/action filter
+       - Export to CSV
+       - Files: server/src/models/AuditLog.ts
+                server/src/middlewares/auditLog.ts
+                client/src/pages/panels/SuperAdminPanel.tsx (audit tab)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PHASE 1 — CORE UX COMPLETIONS (High Priority)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  1.1  Feed Infinite Scroll
+       - IntersectionObserver on last post card
+       - Auto-load next page when user scrolls near bottom
+       - Loading skeleton cards
+       - "You're up to date" message at end
+       - Files: client/src/pages/feed/FeedPage.tsx (update)
+
+  1.2  Bookmarks / Saved Posts
+       - SavedPost model: userId, postId, savedAt
+       - Save/unsave toggle endpoint: POST/DELETE /posts/:id/save
+       - PostCard: bookmark icon (hollow/filled)
+       - /saved page: list of saved posts
+       - LeftSidebar "Saved Clinical Cases" shortcut → /saved
+       - Files: server/src/models/SavedPost.ts
+                server/src/controllers/post.controller.ts (add save methods)
+                client/src/pages/feed/SavedPostsPage.tsx
+                client/src/components/feed/PostCard.tsx (add bookmark)
+
+  1.3  Post Visibility & Reporting
+       - Report post button on PostCard (reason selector)
+       - PostReport model: reporterId, postId, reason, createdAt
+       - SuperAdmin: reported posts queue in admin panel
+       - Threshold auto-hide: post with 5+ reports gets hidden pending review
+       - Files: server/src/models/PostReport.ts
+                client/src/components/feed/PostCard.tsx (report option in menu)
+
+  1.4  Notification Link Navigation
+       - Notification click pe navigate to relevant page:
+           CONNECTION_REQUEST → /network
+           POST_LIKE → /feed (scroll to post)
+           POST_COMMENT → /feed (scroll to post)
+           CREDENTIAL_STATUS → /profile
+           JOB_ALERT → /jobs
+       - `link` field already in Notification model, populate it
+       - Files: client/src/components/layout/Navbar.tsx (update notification click)
+
+  1.5  Settings Page ( /settings )
+       - Tabs: Account | Security | Notifications | Privacy
+       - Account: change email, change password (moved from profile)
+       - Security: active sessions list, 2FA setup (Phase 2), logout all devices
+       - Notifications: email on/off per notification type
+       - Privacy: profile visibility (all / connections only)
+       - Files: client/src/pages/settings/SettingsPage.tsx
+                server/src/models/UserSettings.ts
+                server/src/controllers/settings.controller.ts
+
+  1.6  Messaging Improvements
+       - Typing indicator: socket events typing_start / typing_stop
+       - Read receipts UI: double tick (✓✓) when message seen
+       - Conversation delete/archive
+       - Unread message count badge on conversation list item
+       - Files: client/src/pages/messaging/MessagingPage.tsx (update)
+                server/src/controllers/chat.controller.ts (update)
+
+  1.7  SuperAdmin — Content Moderation Panel
+       - Reported posts list with: post content, reporter, reason, action buttons
+       - Delete post, warn user, ignore report actions
+       - Reported users list
+       - Content stats: posts flagged today/week
+       - Files: client/src/pages/panels/SuperAdminPanel.tsx (add moderation tab)
+                server/src/controllers/admin.controller.ts (add moderation methods)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PHASE 2 — ADVANCED FEATURES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  2.1  File Storage — AWS S3 / Cloudinary
+       - Replace local disk storage with cloud storage
+       - Profile avatar upload (currently only URL input)
+       - Post image upload (currently only URL pasting)
+       - Credential document cloud storage
+       - Pre-signed URLs for private credential documents
+       - multer-s3 or cloudinary-storage adapter
+       - Files: server/src/middlewares/upload.ts (update)
+                server/src/services/storageService.ts (new)
+       - ENV: AWS_ACCESS_KEY, AWS_SECRET_KEY, S3_BUCKET or CLOUDINARY_URL
+
+  2.2  Two-Factor Authentication (2FA)
+       - TOTP-based (Google Authenticator compatible)
+       - QR code generation for setup
+       - Backup codes (one-time use)
+       - 2FA enable/disable in Settings > Security
+       - Login flow: password → 2FA code prompt
+       - SuperAdmin can force-enable 2FA for credentialing officers
+       - Packages: speakeasy, qrcode
+       - Files: server/src/controllers/auth.controller.ts (add 2FA methods)
+                client/src/pages/settings/SettingsPage.tsx (2FA section)
+
+  2.3  Employer Applicants Dashboard
+       - Hospital/Recruiter panel: per-job applicant list
+       - Applicant profile view (doctor's full profile)
+       - Status update: PENDING → REVIEWED → SHORTLISTED → REJECTED
+       - Shortlisted candidates InMail
+       - Download applicant list as CSV
+       - Files: client/src/pages/panels/HospitalPanel.tsx (applicants tab)
+                server/src/controllers/jobs.controller.ts (getJobApplicants already done)
+
+  2.4  Post Impressions — Real View Tracking
+       - Post.viewsCount field add karo
+       - Debounced view tracking: user post dekhne pe /posts/:id/view call
+       - Analytics mein accurate impression data
+       - Files: server/src/models/Post.ts (add viewsCount)
+                server/src/controllers/post.controller.ts (add trackView)
+                client/src/components/feed/PostCard.tsx (intersection observer)
+
+  2.5  PDF Export — Doctor Profile
+       - Doctor apni profile PDF mein download kar sake
+       - jsPDF ya Puppeteer-based PDF generation
+       - Include: name, credentials, education, experience, procedures
+       - Watermark: "DocIn Verified" if clinical verified
+       - Files: server/src/controllers/doctor.controller.ts (add exportProfile)
+                client/src/pages/profile/DoctorProfilePage.tsx (download button)
+
+  2.6  Stripe Payment Integration — Gold Subscriptions
+       - Currently isClinicalVerified aur subscriptionTier sirf manual flags hain
+       - Stripe Checkout for Premium Gold subscription
+       - Webhook: subscription active → update user tier in DB
+       - Subscription management: upgrade, cancel, renewal
+       - SuperAdmin: subscription revenue dashboard
+       - Files: server/src/controllers/payment.controller.ts (new)
+                server/src/routes/payment.routes.ts (new)
+                client/src/pages/subscription/SubscriptionPage.tsx (new)
+       - ENV: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_ID
+
+  2.7  SuperAdmin — Full Analytics Dashboard
+       - Real-time user registration chart (last 30 days)
+       - Daily active users (DAU)
+       - Post engagement heatmap by day/hour
+       - Top 10 most active doctors
+       - Revenue chart (Gold subscriptions over time)
+       - Geographic distribution map
+       - API response time monitoring
+       - Recharts ya Chart.js integration
+       - Files: client/src/pages/panels/SuperAdminPanel.tsx (analytics tab extend)
+
+  2.8  SuperAdmin — System Settings Panel
+       - Maintenance mode toggle (shows maintenance banner to all users)
+       - Feature flags: enable/disable specific features
+       - Platform-wide announcement banner
+       - Allowed registration roles (e.g., disable RECRUITER self-registration)
+       - Max file upload size control
+       - Files: server/src/models/SystemSettings.ts (new — singleton document)
+                server/src/controllers/admin.controller.ts (settings methods)
+                client/src/pages/panels/SuperAdminPanel.tsx (settings tab)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PHASE 3 — HEALTHCARE-SPECIFIC FEATURES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  3.1  Medical Groups / Societies
+       - Group model: name, specialty, description, privacy, members[], admin
+       - Create/join/leave group
+       - Group feed (posts tagged to group)
+       - Group admin can post announcements, remove members
+       - SuperAdmin can delete any group
+       - Files: server/src/models/MedicalGroup.ts (new)
+                server/src/controllers/group.controller.ts (new)
+                client/src/pages/groups/GroupsPage.tsx (new)
+                client/src/pages/groups/GroupDetailPage.tsx (new)
+
+  3.2  CME Credits Tracker (Continuing Medical Education)
+       - CME credit field on posts (tagged as CME activity)
+       - Doctor's CME log: activity, credits, date, provider
+       - Annual credit target vs achieved progress bar
+       - CME dashboard on doctor profile
+       - Export CME certificate PDF
+       - Files: server/src/models/CMERecord.ts (new)
+                client/src/pages/profile/CMEDashboard.tsx (new)
+
+
+  3.4  Medical Events Calendar
+       - Conferences, CME events, workshops listing
+       - Event model: title, date, location, organizer, link, specialty tags
+       - RSVP / Register interest
+       - SuperAdmin / Hospitals can post events
+       - Calendar view + list view
+       - Files: server/src/models/MedicalEvent.ts (new)
+                client/src/pages/events/EventsPage.tsx (new)
+
+  3.5  Research & Publications
+       - Doctor can link/post published research papers
+       - PubMed API integration for paper lookup by DOI
+       - Publications section on doctor profile
+       - Citation count display
+       - Files: server/src/models/Publication.ts (new)
+                client/src/pages/profile/DoctorProfilePage.tsx (publications section)
+
+  3.6  Hospital Profile Pages
+       - Hospital has its own public profile page
+       - Shows: about, departments, affiliated doctors, active jobs
+       - Verified hospital badge
+       - Follow hospital to see job updates in feed
+       - Files: server/src/models/HospitalProfile.ts (new)
+                client/src/pages/hospital/HospitalProfilePage.tsx (new)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PHASE 4 — PERFORMANCE & PRODUCTION READINESS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  4.1  Testing Suite
+       - Backend: Jest + Supertest
+         * Auth flow tests (register, login, refresh, logout)
+         * Credential approval flow
+         * PHI sanitizer property tests
+         * Job application flow
+         * Role-based access control tests
+       - Frontend: Vitest + React Testing Library
+         * Auth context tests
+         * PostCard component tests
+         * Form validation tests
+       - Files: server/src/__tests__/ (directory)
+                client/src/__tests__/ (directory)
+
+  4.2  Progressive Web App (PWA)
+       - Service Worker registration
+       - Web App Manifest (icon, name, theme color)
+       - Offline fallback page
+       - Background sync for messages when offline
+       - "Add to Home Screen" prompt
+       - Files: client/public/manifest.json
+                client/src/serviceWorker.ts
+
+  4.3  Redis Caching
+       - Cache: feed posts, job listings, doctor search results
+       - Cache invalidation on new post/job
+       - Session store in Redis (instead of in-memory)
+       - Rate limiter backed by Redis (for multi-instance)
+       - ENV: REDIS_URL
+
+  4.4  Database Optimization
+       - Add missing MongoDB indexes for common queries
+       - Pagination on all list endpoints (already partially done)
+       - Aggregation pipeline optimization for analytics
+       - MongoDB Atlas performance advisor recommendations
+
+  4.5  API Documentation (Swagger/OpenAPI)
+       - Auto-generate API docs from route definitions
+       - Available at /api/docs in development
+       - Authentication, request/response schemas
+       - Packages: swagger-ui-express, swagger-jsdoc
+
+  4.6  Docker + CI/CD
+       - Dockerfile for server
+       - docker-compose.yml for local dev (server + MongoDB + Redis)
+       - GitHub Actions workflow:
+           * Run tests on every PR
+           * Build Docker image on merge to main
+           * Deploy to staging automatically
+       - Files: Dockerfile, docker-compose.yml, .github/workflows/ci.yml
+
+  4.7  Localization (i18n)
+       - i18next + react-i18next integration
+       - English (default)
+       - Urdu support (for Pakistan market)
+       - Arabic support (RTL layout)
+       - Language selector in Navbar
+       - Translation files: client/src/locales/en.json, ur.json, ar.json
+
+  4.8  Monitoring & Error Tracking
+       - Sentry integration (frontend + backend error tracking)
+       - Health check endpoint improvement (DB ping, Redis ping)
+       - Morgan HTTP request logger
+       - LogRocket or FullStory for session replay (frontend)
+       - ENV: SENTRY_DSN
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SUPERADMIN PANEL — COMPLETE TAB STRUCTURE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Tab 1: Dashboard / Analytics
+  ─────────────────────────────────
+  • KPI cards: Users, Verified Doctors, Posts, Jobs, Active Sessions
+  • User registration trend chart (30 days)
+  • Specialty distribution bar chart
+  • Gold membership revenue chart
+  • Platform activity heatmap
+  • Top 10 active users
+
+  Tab 2: User Management
+  ─────────────────────────────────
+  • Search + filter by role/status/tier
+  • Paginated user table
+  • Per user: View Profile | Edit Role | Grant Seal | Give Gold | Suspend | Delete
+  • Bulk actions toolbar
+  • Create new user (any role)
+  • Force logout user
+
+  Tab 3: Credential Verification
+  ─────────────────────────────────
+  • All credential queue (any status)
+  • Filter: SUBMITTED / UNDER_REVIEW / APPROVED / REJECTED
+  • Dual-pane inspector (list + document view)
+  • Approve / Reject / Assign to officer
+  • Verification stats card
+
+  Tab 4: Content Moderation
+  ─────────────────────────────────
+  • Reported posts list
+  • Reported users list
+  • Action: Delete Post | Warn User | Ignore Report | Ban User
+  • PHI violation log
+  • Auto-moderation stats
+
+  Tab 5: Job Management
+  ─────────────────────────────────
+  • All job postings (active + closed)
+  • Close or delete any job
+  • View applicants per job
+  • Fake job report queue
+
+  Tab 6: Subscription & Revenue
+  ─────────────────────────────────
+  • All Gold subscribers list
+  • Manually grant / revoke / extend Gold
+  • Revenue chart (Stripe payments)
+  • Subscription expiry alerts
+
+  Tab 7: Messaging Oversight
+  ─────────────────────────────────
+  • Reported conversations
+  • Ban spammer from messaging
+  • Messaging volume stats
+
+  Tab 8: System Settings
+  ─────────────────────────────────
+  • Maintenance mode toggle
+  • Platform announcement banner
+  • Feature flags table
+  • Email template editor
+  • Allowed registration roles
+  • Rate limit controls
+
+  Tab 9: Security Center
+  ─────────────────────────────────
+  • Active sessions (all users)
+  • Login history with IP/device
+  • Failed login attempts report
+  • Force logout any user
+  • Security alerts feed
+  • 2FA enforcement settings
+
+  Tab 10: Audit Logs
+  ─────────────────────────────────
+  • All admin actions log
+  • Filter: by admin user, action type, date range, target user
+  • Export to CSV
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  CURRENT STATUS SUMMARY (As of Latest Update)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  DONE ✅ (Sprint 0 — Sprint 5 COMPLETE)
+  ────────────────────────────────────────
+  AUTHENTICATION & SECURITY
+  • Login, Register (Professional + Observer modes), Google OAuth
+  • Forgot/Reset Password with email
+  • JWT access + refresh token with DB-backed rotation + revocation
+  • Two-Factor Authentication (2FA) — TOTP, QR code, backup codes
+  • Change password (logged-in user)
+  • Active sessions list + logout all devices
+  • Rate limiting on auth endpoints
+  • Input validation middleware
+  • requireProfessional middleware (Observer cannot write)
+
+  OBSERVER / PUBLIC ACCESS
+  • Feed publicly visible without login (like Twitter)
+  • Jobs listing public
+  • Doctor profiles public (/profile/:userId)
+  • Search results public
+  • Groups/Events public browsing
+  • UpgradeModal for restricted actions
+  • Register page with Observer option
+  • Login/Join buttons in Navbar for guests
+
+  FEED & POSTS
+  • Create/edit/delete/like/comment/repost posts
+  • PHI auto-sanitization for clinical cases
+  • Feed filters (All, Cases, Research)
+  • Infinite scroll (IntersectionObserver)
+  • Save/bookmark posts + Saved Posts page
+  • Post reporting (reasons + admin queue)
+  • Post view in PostCard with save + report menu
+
+  DOCTOR PROFILE
+  • View own profile with real data (no hardcoded strings)
+  • Edit profile modal (fullName, headline, specialty, etc.)
+  • Change password modal
+  • Avatar upload via Cloudinary
+  • Analytics: real profileViews, postImpressions, searchAppearances
+  • Education, affiliations, procedures all dynamic
+  • Public profile page (/profile/:userId)
+  • CME Credits Tracker (full dashboard, add/delete records)
+
+  CONNECTIONS & NETWORK
+  • Send/accept/decline/withdraw/remove connections
+  • Real-time connection request notifications
+  • Recommendations (excludes existing connections)
+  • URL ?q= search support in NetworkPage
+  • Message button → navigates to messaging
+
+  MESSAGING
+  • Real-time Socket.IO messaging
+  • Typing indicator (send/receive)
+  • Optimistic UI
+  • ?userId= auto-start conversation
+  • Conversations list with search
+
+  CREDENTIALS & VERIFICATION
+  • Real multer + Cloudinary file upload
+  • OCR scanning (Tesseract.js)
+  • Under Review → Approve / Reject workflow
+  • Email on approve/reject
+  • Credentialing panel with dual-pane inspector
+
+  JOBS
+  • Job listings (public)
+  • Apply to job with cover note
+  • My Applications tab with status tracking
+  • Close job posting
+  • Hospital applicants dashboard with status update
+
+  MEDICAL GROUPS
+  • Create/join/leave groups
+  • Public/private groups
+  • My Groups view
+  • Admin can delete group
+
+  MEDICAL EVENTS & CALENDAR
+  • List upcoming events (public)
+  • Create event (professional only)
+  • RSVP / un-RSVP toggle
+  • Online/offline events with CME credits
+
+  SUPER ADMIN PANEL (Full Control)
+  • Analytics tab: KPI cards + registration trend chart + specialty chart (Recharts)
+  • User Management: search, filter, verify, gold, suspend, activate, force logout
+  • Content Moderation: reported posts queue, resolve/delete actions
+  • Audit Logs: all admin actions with actor, target, timestamp
+  • System Settings: maintenance mode, announcement banner, feature flags
+
+  HOSPITAL PANEL
+  • Post jobs with full form
+  • View/close jobs
+  • View applicants per job
+  • Update application status (REVIEWED/SHORTLISTED/REJECTED)
+
+  RECRUITER PANEL
+  • Talent search with filters
+  • InMail → navigates to messaging
+  • Post Job button → hospital panel
+
+  SETTINGS PAGE
+  • Account info
+  • Change password
+  • Active sessions list + logout all
+  • 2FA setup/verify/disable/backup codes
+  • Notification preferences
+
+  SUBSCRIPTION
+  • Stripe Checkout for Gold upgrade
+  • Webhook handler for subscription events
+  • Subscription status page with free vs gold comparison
+  • Cancel subscription
+
+  EMAIL SERVICE
+  • Welcome email on registration
+  • Password reset email (HTML template)
+  • Credential approved/rejected email
+  • Job application status email
+  • Connection request email
+
+  CLOUDINARY STORAGE
+  • Credentials uploaded to Cloudinary
+  • Profile avatar upload to Cloudinary
+  • Automatic optimization (quality: auto, format: auto)
+
+  AUDIT LOGS
+  • AuditLog model with TTL (1 year)
+  • Auto-logged: credential actions, user management, role changes
+  • Admin panel audit log tab with filtering
+
+  SYSTEM SETTINGS
+  • SystemSettings singleton model
+  • Maintenance mode toggle
+  • Announcement banner
+  • Feature flags
+  • Admin panel settings tab
+
+  NOT STARTED ❌ (Phase 4 — Production)
+  ────────────────────────────────────────
+  • Testing suite (Jest + Vitest)
+  • PWA (Service Worker + manifest)
+  • Redis caching
+  • Docker + CI/CD
+  • API documentation (Swagger)
+  • Monitoring (Sentry)
+  • Localization (i18n — Urdu/Arabic)
+  • Hospital Profile Pages (dedicated /hospital/:id page)
+  • Research & Publications section
+  • Telemedicine scheduling
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  EXECUTION ORDER RECOMMENDATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  SPRINT 1 (Abhi Karo — Production Readiness):
+  ─────────────────────────────────────────────
+  1. Observer Role + Public Feed (no login required)
+  2. requireProfessional middleware
+  3. UpgradeModal component
+  4. Navbar: Login/Join buttons for logged-out users
+  5. Email Service (password reset + credential notifications)
+  6. Public Profile Page /profile/:userId
+  7. Search Results Page /search?q=
+  8. Notification link navigation
+  9. Refresh Token Revocation
+
+  SPRINT 2 (Core UX):
+  ─────────────────────────────────────────────
+  6.  Feed Infinite Scroll
+  7.  Bookmarks / Saved Posts
+  8.  Messaging: Typing indicator + read receipts
+  9.  Settings Page
+  10. Post Reporting + Admin Moderation Queue
+
+  SPRINT 3 (SuperAdmin Full Control):
+  ─────────────────────────────────────────────
+  11. Audit Log System
+  12. SuperAdmin: Complete Analytics Dashboard
+  13. SuperAdmin: System Settings Panel
+  14. SuperAdmin: Security Center (sessions, force logout)
+  15. SuperAdmin: Subscription Management
+
+  SPRINT 4 (Advanced):
+  ─────────────────────────────────────────────
+  16. S3/Cloudinary file storage
+  17. Avatar upload (profile + post images)
+  18. Stripe payments (Gold subscription)
+  19. Employer Applicants Dashboard
+  20. 2FA
+
+  SPRINT 5 (Healthcare Specific):
+  ─────────────────────────────────────────────
+  21. Medical Groups
+  22. CME Credits Tracker
+  23. Hospital Profile Pages
+  24. Medical Events Calendar
+
+  SPRINT 6 (Production + Scale):
+  ─────────────────────────────────────────────
+  25. Testing Suite (Jest + Vitest)
+  26. Docker + CI/CD
+  27. Redis Caching
+  28. PWA
+  29. API Documentation (Swagger)
+  30. Monitoring (Sentry)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  END OF ROADMAP — DocIn™ Healthcare Platform
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

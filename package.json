@@ -1,0 +1,11 @@
+{
+  "name": "docin-platform",
+  "version": "1.0.0",
+  "description": "DocIn Healthcare Platform — monorepo build for Railway",
+  "scripts": {
+    "build": "npm run build:client && npm run build:server",
+    "build:client": "cd client && npm install && npm run build",
+    "build:server": "cd server && npm install && npm run build",
+    "start": "cd server && node dist/server.js"
+  }
+}

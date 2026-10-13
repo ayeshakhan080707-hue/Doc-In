@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# Build outputs
+client/dist/
+server/dist/
+server/public/
+
+# Environment files — NEVER commit these
+.env
+client/.env
+server/.env
+*.env.local
+*.env.production
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
