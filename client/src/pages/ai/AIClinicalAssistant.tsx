@@ -1,476 +1,503 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
-  BrainCircuit, Loader2, AlertTriangle, ChevronDown, ChevronUp,
-  FlaskConical, Stethoscope, BookOpen, ClipboardList, AlertCircle,
-  CheckCircle2, Sparkles, Send, RotateCcw, Info, Shield,
-  ArrowRight, Microscope, Pill,
+  BrainCircuit, Send, Plus, Trash2, Loader2, AlertTriangle,
+  Stethoscope, FlaskConical, BookOpen, Pill, CheckCircle2,
+  AlertCircle, Sparkles, MessageSquare, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { apiClient } from '../../api/client';
+import { useAuth } from '../../context/AuthContext';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Differential {
-  rank: number;
-  diagnosis: string;
-  icd10Code: string;
-  icd10Description: string;
-  probability: 'High' | 'Moderate' | 'Low';
-  supportingFeatures: string[];
-  againstFeatures: string[];
-  keyDistinguisher: string;
+  rank: number; diagnosis: string; icd10Code: string; icd10Description: string;
+  probability: string; supportingFeatures: string[]; againstFeatures: string[]; keyDistinguisher: string;
 }
-
-interface Guideline {
-  name: string;
-  organization: string;
-  year: string;
-  keyRecommendation: string;
-}
-
 interface AIAnalysis {
-  patientSummary: string;
-  redFlags: string[];
+  patientSummary: string; redFlags: string[];
   differentials: Differential[];
-  recommendedWorkup: {
-    urgentTests: string[];
-    laboratoryTests: string[];
-    imaging: string[];
-    specialTests: string[];
-  };
+  recommendedWorkup: { urgentTests: string[]; laboratoryTests: string[]; imaging: string[]; specialTests: string[]; };
   treatmentConsiderations: string[];
-  relevantGuidelines: Guideline[];
+  relevantGuidelines: Array<{ name: string; organization: string; year: string; keyRecommendation: string; }>;
   followUpRecommendations: string[];
   disclaimer: string;
 }
+interface Message { id: string; role: 'user' | 'ai'; content: string; analysis?: AIAnalysis; timestamp: string; }
+interface Session { id: string; title: string; createdAt: string; messages: Message[]; }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-const PROB_COLOR: Record<string, string> = {
-  High: 'bg-red-50 text-red-700 border-red-200',
-  Moderate: 'bg-amber-50 text-amber-700 border-amber-200',
-  Low: 'bg-green-50 text-green-700 border-green-200',
+const LS_KEY = 'docin_ai_sessions';
+
+// ── localStorage helpers ──────────────────────────────────────────────────────
+const getSessions = (): Session[] => {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch { return []; }
+};
+const saveSessions = (s: Session[]) => localStorage.setItem(LS_KEY, JSON.stringify(s.slice(0, 20)));
+
+// ── Greeting ──────────────────────────────────────────────────────────────────
+const greeting = () => {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 17) return 'Good afternoon';
+  return 'Good evening';
 };
 
-const SPECIALTIES = [
-  'General Medicine', 'Cardiology', 'Pulmonology', 'Gastroenterology',
-  'Neurology', 'Nephrology', 'Endocrinology', 'Hematology', 'Oncology',
-  'Infectious Disease', 'Rheumatology', 'Orthopedics', 'Dermatology',
-  'Psychiatry', 'Pediatrics', 'Obstetrics & Gynecology', 'Urology',
-  'Ophthalmology', 'ENT', 'Emergency Medicine', 'Critical Care',
-];
+// ── AI Message Renderer ───────────────────────────────────────────────────────
+const AIMessageBubble: React.FC<{ msg: Message }> = ({ msg }) => {
+  const [showDetails, setShowDetails] = useState(false);
+  const a = msg.analysis;
 
-const EXAMPLE_CASES = [
-  {
-    label: 'Chest pain + dyspnea',
-    text: '62-year-old male presenting with 2-hour history of crushing chest pain radiating to left arm and jaw, associated with diaphoresis and dyspnea. BP 160/100, HR 98, RR 22, SpO2 94% on room air. No fever. History of hypertension and smoking for 30 years.',
-    age: '62', gender: 'Male', specialty: 'Cardiology',
-    vitals: 'BP: 160/100 mmHg | HR: 98 bpm | RR: 22/min | SpO2: 94% RA | Temp: 37.2°C',
-  },
-  {
-    label: 'Fever + joint pain',
-    text: '28-year-old female with 3-week history of migratory polyarthritis affecting wrists and knees, low-grade fever 38.1°C, fatigue, and a new butterfly-shaped rash across cheeks and nose bridge. No recent travel. Family history of autoimmune disease.',
-    age: '28', gender: 'Female', specialty: 'Rheumatology',
-    vitals: 'BP: 118/74 | HR: 88 | Temp: 38.1°C | RR: 16 | SpO2: 98%',
-  },
-  {
-    label: 'Altered consciousness',
-    text: '45-year-old male brought to ER with altered consciousness, slurred speech and right-sided weakness. Onset was sudden, 1 hour ago. Known hypertensive, not compliant with medications. GCS 12. No history of trauma.',
-    age: '45', gender: 'Male', specialty: 'Neurology',
-    vitals: 'BP: 210/120 | HR: 96 | Temp: 37.0°C | RR: 18 | SpO2: 97%',
-    labs: 'Blood glucose: 7.2 mmol/L | Na: 138 | K: 4.1',
-  },
-];
-
-// ── Collapsible section ───────────────────────────────────────────────────────
-const Section: React.FC<{ title: string; icon: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean; accent?: string }> = ({
-  title, icon, children, defaultOpen = false, accent = 'text-gray-700',
-}) => {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="card-linkedin overflow-hidden">
-      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">
-        <div className={`flex items-center gap-2 font-bold text-sm ${accent}`}>
-          {icon} {title}
+  if (!a) {
+    return (
+      <div className="flex gap-3 justify-start">
+        <div className="w-8 h-8 rounded-full bg-[#EBF5FF] flex items-center justify-center flex-shrink-0">
+          <BrainCircuit size={16} className="text-[#0A66C2]" />
         </div>
-        {open ? <ChevronUp size={16} className="text-gray-400"/> : <ChevronDown size={16} className="text-gray-400"/>}
-      </button>
-      {open && <div className="px-5 pb-5 border-t border-gray-100">{children}</div>}
+        <div className="max-w-[80%] bg-white border-l-4 border-[#0A66C2] rounded-r-xl rounded-bl-xl px-4 py-3 shadow-sm text-sm text-gray-700 leading-relaxed">
+          {msg.content}
+        </div>
+      </div>
+    );
+  }
+
+  const probColor = (p: string) =>
+    p === 'High' ? 'bg-red-100 text-red-700' :
+    p === 'Moderate' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700';
+
+  return (
+    <div className="flex gap-3 justify-start">
+      <div className="w-8 h-8 rounded-full bg-[#EBF5FF] flex items-center justify-center flex-shrink-0 mt-1">
+        <BrainCircuit size={16} className="text-[#0A66C2]" />
+      </div>
+      <div className="max-w-[85%] bg-white border border-gray-200 border-l-4 border-l-[#0A66C2] rounded-r-xl rounded-bl-xl shadow-sm overflow-hidden">
+        {/* Summary */}
+        <div className="px-4 pt-3 pb-2 border-b border-gray-100">
+          <p className="text-xs font-bold text-[#0A66C2] uppercase tracking-wider mb-1">Case Analysis</p>
+          <p className="text-sm text-gray-800 font-medium">{a.patientSummary}</p>
+        </div>
+
+        {/* Red flags */}
+        {a.redFlags?.length > 0 && (
+          <div className="mx-4 mt-3 p-3 bg-red-50 border border-red-200 rounded-xl">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <AlertTriangle size={13} className="text-red-600" />
+              <span className="text-xs font-bold text-red-700 uppercase tracking-wider">⚠ Red Flags</span>
+            </div>
+            {a.redFlags.map((f, i) => <p key={i} className="text-xs text-red-800 flex items-start gap-1"><span>•</span>{f}</p>)}
+          </div>
+        )}
+
+        {/* Differentials */}
+        {a.differentials?.length > 0 && (
+          <div className="px-4 pt-3">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Stethoscope size={13} className="text-[#0A66C2]" />
+              <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">Differential Diagnoses</span>
+            </div>
+            <div className="space-y-2">
+              {a.differentials.map(dx => (
+                <div key={dx.rank} className={`rounded-lg border p-2.5 ${dx.rank === 1 ? 'bg-[#EBF5FF] border-[#0A66C2]/30' : 'bg-gray-50 border-gray-200'}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-2">
+                      <span className={`w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center flex-shrink-0 ${dx.rank === 1 ? 'bg-[#0A66C2] text-white' : 'bg-gray-300 text-gray-700'}`}>{dx.rank}</span>
+                      <div>
+                        <p className="text-xs font-bold text-gray-900">{dx.diagnosis}</p>
+                        <p className="text-[10px] text-gray-500 font-mono">ICD-10: {dx.icd10Code} — {dx.icd10Description}</p>
+                        {dx.keyDistinguisher && <p className="text-[11px] text-[#0A66C2] mt-0.5 italic">{dx.keyDistinguisher}</p>}
+                      </div>
+                    </div>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${probColor(dx.probability)}`}>{dx.probability}</span>
+                  </div>
+                  {dx.supportingFeatures?.length > 0 && (
+                    <div className="mt-1.5 ml-7">
+                      <span className="text-[10px] font-bold text-emerald-600">Supporting: </span>
+                      <span className="text-[11px] text-gray-600">{dx.supportingFeatures.slice(0, 3).join(' · ')}</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Toggle details */}
+        <button onClick={() => setShowDetails(!showDetails)}
+          className="w-full flex items-center justify-center gap-1.5 px-4 py-2 mt-2 border-t border-gray-100 text-xs text-[#0A66C2] font-semibold hover:bg-[#EBF5FF] transition-colors">
+          {showDetails ? <><ChevronUp size={13}/> Hide details</> : <><ChevronDown size={13}/> Show workup, treatment & guidelines</>}
+        </button>
+
+        {showDetails && (
+          <div className="px-4 pb-4 space-y-3 border-t border-gray-100 pt-3">
+            {/* Workup */}
+            {a.recommendedWorkup && (
+              <div>
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <FlaskConical size={12} className="text-blue-600"/>
+                  <span className="text-xs font-bold text-gray-700">Recommended Workup</span>
+                </div>
+                {a.recommendedWorkup.urgentTests?.length > 0 && (
+                  <p className="text-[11px] mb-1"><span className="font-bold text-red-600">Urgent: </span>{a.recommendedWorkup.urgentTests.join(', ')}</p>
+                )}
+                {a.recommendedWorkup.laboratoryTests?.length > 0 && (
+                  <p className="text-[11px] mb-1"><span className="font-bold text-gray-600">Labs: </span>{a.recommendedWorkup.laboratoryTests.join(', ')}</p>
+                )}
+                {a.recommendedWorkup.imaging?.length > 0 && (
+                  <p className="text-[11px] mb-1"><span className="font-bold text-gray-600">Imaging: </span>{a.recommendedWorkup.imaging.join(', ')}</p>
+                )}
+                {a.recommendedWorkup.specialTests?.length > 0 && (
+                  <p className="text-[11px]"><span className="font-bold text-gray-600">Special: </span>{a.recommendedWorkup.specialTests.join(', ')}</p>
+                )}
+              </div>
+            )}
+
+            {/* Treatment */}
+            {a.treatmentConsiderations?.length > 0 && (
+              <div>
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <Pill size={12} className="text-emerald-600"/>
+                  <span className="text-xs font-bold text-gray-700">Treatment Considerations</span>
+                </div>
+                {a.treatmentConsiderations.map((t, i) => (
+                  <p key={i} className="text-[11px] text-gray-700 flex items-start gap-1"><CheckCircle2 size={10} className="text-emerald-500 mt-0.5 flex-shrink-0"/>{t}</p>
+                ))}
+              </div>
+            )}
+
+            {/* Guidelines */}
+            {a.relevantGuidelines?.length > 0 && (
+              <div>
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <BookOpen size={12} className="text-amber-600"/>
+                  <span className="text-xs font-bold text-gray-700">Evidence-Based Guidelines</span>
+                </div>
+                {a.relevantGuidelines.map((g, i) => (
+                  <div key={i} className="text-[11px] mb-1">
+                    <span className="font-bold text-gray-800">{g.name}</span>
+                    <span className="text-gray-500"> ({g.organization}, {g.year})</span>
+                    {g.keyRecommendation && <p className="text-gray-600 ml-2">→ {g.keyRecommendation}</p>}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Disclaimer */}
+            <div className="p-2 bg-gray-50 rounded-lg border border-gray-200">
+              <p className="text-[10px] text-gray-500 leading-relaxed">{a.disclaimer}</p>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
+// ── EXAMPLE SUGGESTIONS ───────────────────────────────────────────────────────
+const SUGGESTIONS = [
+  { label: 'Chest pain + diaphoresis', text: '62-year-old male with sudden crushing chest pain radiating to left arm for 2 hours. Associated with diaphoresis and nausea. History of hypertension and smoking. BP 160/100, HR 98, SpO2 94%.', age: '62', gender: 'Male', specialty: 'Cardiology' },
+  { label: 'Fever + joint pain + rash', text: '28-year-old female with 3-week migratory polyarthritis of wrists and knees, low-grade fever 38.1°C, fatigue, and butterfly-shaped malar rash. Family history of autoimmune disease.', age: '28', gender: 'Female', specialty: 'Rheumatology' },
+  { label: 'Unconscious young male', text: '19-year-old male found unconscious by roommates. Empty bottles nearby. GCS 8, HR 52, BP 90/60, RR 8, pupils 2mm bilaterally constricted non-reactive. SpO2 88%.', age: '19', gender: 'Male', specialty: 'Emergency Medicine' },
+];
+
+// ── MAIN PAGE ─────────────────────────────────────────────────────────────────
 export const AIClinicalAssistant: React.FC = () => {
-  const [caseDescription, setCaseDescription] = useState('');
+  const { user } = useAuth();
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
   const [patientAge, setPatientAge] = useState('');
   const [patientGender, setPatientGender] = useState('');
-  const [vitalSigns, setVitalSigns] = useState('');
-  const [labResults, setLabResults] = useState('');
   const [specialty, setSpecialty] = useState('General Medicine');
-  const [analysis, setAnalysis] = useState<AIAnalysis | null>(null);
+  const [showPatientDetails, setShowPatientDetails] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const handleAnalyze = async () => {
-    if (!caseDescription.trim() || caseDescription.trim().length < 20) {
-      setError('Please describe the clinical case in detail (at least 20 characters).');
-      return;
-    }
+  // Load sessions on mount
+  useEffect(() => {
+    setSessions(getSessions());
+  }, []);
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isLoading]);
+
+  const startNewChat = () => {
+    setActiveSessionId(null);
+    setMessages([]);
+    setInput('');
+    setPatientAge('');
+    setPatientGender('');
     setError('');
+  };
+
+  const loadSession = (session: Session) => {
+    setActiveSessionId(session.id);
+    setMessages(session.messages);
+    setError('');
+  };
+
+  const deleteSession = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = sessions.filter(s => s.id !== id);
+    setSessions(updated);
+    saveSessions(updated);
+    if (activeSessionId === id) startNewChat();
+  };
+
+  const saveSession = (msgs: Message[], sessionId: string | null, firstMsg: string) => {
+    const all = getSessions();
+    const title = firstMsg.substring(0, 50) + (firstMsg.length > 50 ? '...' : '');
+    if (sessionId) {
+      const idx = all.findIndex(s => s.id === sessionId);
+      if (idx > -1) { all[idx].messages = msgs; saveSessions(all); setSessions([...all]); return sessionId; }
+    }
+    const newId = `session_${Date.now()}`;
+    const newSession: Session = { id: newId, title, createdAt: new Date().toISOString(), messages: msgs };
+    const updated = [newSession, ...all];
+    saveSessions(updated);
+    setSessions(updated);
+    return newId;
+  };
+
+  const handleSend = async () => {
+    const text = input.trim();
+    if (!text || isLoading) return;
+    setError('');
+
+    const userMsg: Message = { id: `u_${Date.now()}`, role: 'user', content: text, timestamp: new Date().toISOString() };
+    const newMsgs = [...messages, userMsg];
+    setMessages(newMsgs);
+    setInput('');
     setIsLoading(true);
-    setAnalysis(null);
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+
     try {
       const res = await apiClient.post('/ai/analyze', {
-        caseDescription, patientAge, patientGender, vitalSigns, labResults, specialty,
+        caseDescription: text,
+        patientAge, patientGender, specialty,
       });
-      setAnalysis(res.data.data);
+      const analysis: AIAnalysis = res.data.data;
+
+      const aiMsg: Message = {
+        id: `a_${Date.now()}`,
+        role: 'ai',
+        content: analysis.patientSummary || 'Analysis complete.',
+        analysis,
+        timestamp: new Date().toISOString(),
+      };
+
+      const finalMsgs = [...newMsgs, aiMsg];
+      setMessages(finalMsgs);
+      const sid = saveSession(finalMsgs, activeSessionId, text);
+      setActiveSessionId(sid);
     } catch (err: any) {
       setError(err.response?.data?.message || 'Analysis failed. Please try again.');
+      setMessages(newMsgs); // keep user msg
     } finally {
       setIsLoading(false);
     }
   };
 
-  const loadExample = (ex: typeof EXAMPLE_CASES[0]) => {
-    setCaseDescription(ex.text);
-    setPatientAge(ex.age || '');
-    setPatientGender(ex.gender || '');
-    setSpecialty(ex.specialty || 'General Medicine');
-    setVitalSigns(ex.vitals || '');
-    setLabResults(ex.labs || '');
-    setAnalysis(null);
-    setError('');
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
-  const reset = () => {
-    setCaseDescription(''); setPatientAge(''); setPatientGender('');
-    setVitalSigns(''); setLabResults(''); setSpecialty('General Medicine');
-    setAnalysis(null); setError('');
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    e.target.style.height = 'auto';
+    e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
   };
+
+  const applySuggestion = (s: typeof SUGGESTIONS[0]) => {
+    setInput(s.text);
+    setPatientAge(s.age);
+    setPatientGender(s.gender);
+    setSpecialty(s.specialty);
+    setShowPatientDetails(true);
+    textareaRef.current?.focus();
+  };
+
+  const doctorName = user?.fullName ? user.fullName.replace(/^Dr\.?\s*/i, '') : 'Doctor';
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-5 space-y-5">
+    <div className="max-w-6xl mx-auto px-4 py-5">
+      <div className="flex flex-col md:flex-row gap-5 items-start">
 
-      {/* ── Banner ── */}
-      <div className="rounded-2xl overflow-hidden bg-gradient-to-r from-violet-900 via-violet-700 to-[#0A66C2] text-white p-6 shadow-md">
-        <div className="flex items-center gap-4">
-          <div className="p-3 rounded-xl bg-white/10 backdrop-blur-sm flex-shrink-0">
-            <BrainCircuit size={30}/>
-          </div>
-          <div>
-            <h1 className="text-xl font-bold">AI Clinical Case Assistant</h1>
-            <p className="text-xs text-violet-200 mt-0.5">
-              Powered by Llama 4 · Differential diagnosis · ICD-10 codes · Evidence-based guidelines
-            </p>
-          </div>
-          <div className="ml-auto flex-shrink-0 hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-white/10 rounded-full text-xs font-medium">
-            <Shield size={12}/> For Licensed Physicians Only
-          </div>
-        </div>
-      </div>
-
-      {/* ── Input Form ── */}
-      <div className="card-linkedin p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="font-bold text-sm text-gray-900 flex items-center gap-2">
-            <ClipboardList size={16} className="text-violet-600"/> Clinical Case Input
-          </h2>
-          <button onClick={reset} className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 transition-colors">
-            <RotateCcw size={12}/> Reset
-          </button>
-        </div>
-
-        {/* Quick examples */}
-        <div>
-          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Quick examples:</p>
-          <div className="flex flex-wrap gap-2">
-            {EXAMPLE_CASES.map(ex => (
-              <button key={ex.label} onClick={() => loadExample(ex)}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-full border border-violet-200 bg-violet-50 text-violet-700 text-xs font-medium hover:bg-violet-100 transition-colors">
-                <Sparkles size={11}/> {ex.label}
+        {/* ══ LEFT SIDEBAR ══════════════════════════════════════════════ */}
+        <div className="w-full md:w-64 flex-shrink-0 md:sticky md:top-[72px] md:self-start">
+          <div className="card-linkedin overflow-hidden">
+            {/* Header */}
+            <div className="px-4 pt-4 pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-7 h-7 rounded-lg bg-[#EBF5FF] flex items-center justify-center">
+                  <BrainCircuit size={15} className="text-[#0A66C2]"/>
+                </div>
+                <span className="font-bold text-sm text-gray-900">Clinical AI</span>
+              </div>
+              <button onClick={startNewChat}
+                className="w-full flex items-center justify-center gap-1.5 py-2 rounded-full bg-[#0A66C2] text-white text-xs font-semibold hover:bg-[#004182] transition-colors">
+                <Plus size={13}/> New Consultation
               </button>
-            ))}
-          </div>
-        </div>
+            </div>
 
-        {/* Patient demographics row */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1.5">Age</label>
-            <input type="text" value={patientAge} onChange={e => setPatientAge(e.target.value)}
-              placeholder="e.g. 45 years" maxLength={20}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-200 transition-all"/>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1.5">Gender</label>
-            <select value={patientGender} onChange={e => setPatientGender(e.target.value)}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-200 transition-all">
-              <option value="">Select</option>
-              <option>Male</option><option>Female</option><option>Other</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1.5">Specialty Context</label>
-            <select value={specialty} onChange={e => setSpecialty(e.target.value)}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-200 transition-all">
-              {SPECIALTIES.map(s => <option key={s}>{s}</option>)}
-            </select>
-          </div>
-        </div>
-
-        {/* Case description */}
-        <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-            Clinical Presentation <span className="text-red-500">*</span>
-            <span className="text-gray-400 font-normal ml-1">(chief complaint, history, examination findings)</span>
-          </label>
-          <textarea
-            rows={6}
-            value={caseDescription}
-            onChange={e => setCaseDescription(e.target.value)}
-            placeholder="Describe the clinical case in detail...&#10;&#10;Example: 55-year-old male with 3-day history of progressively worsening dyspnea, orthopnea, and bilateral leg swelling. Past history of hypertension and diabetes. On examination: raised JVP, bibasal crackles, pitting edema to knees..."
-            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-200 resize-none transition-all"
-            maxLength={3000}
-          />
-          <p className="text-[11px] text-gray-400 mt-1 text-right">{caseDescription.length}/3000</p>
-        </div>
-
-        {/* Optional fields */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-              Vital Signs <span className="text-gray-400 font-normal">(optional)</span>
-            </label>
-            <textarea rows={3} value={vitalSigns} onChange={e => setVitalSigns(e.target.value)}
-              placeholder="BP: 140/90 | HR: 95 | RR: 20 | Temp: 38.2°C | SpO2: 96%"
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-200 resize-none transition-all"
-              maxLength={500}/>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-              Lab / Investigation Results <span className="text-gray-400 font-normal">(optional)</span>
-            </label>
-            <textarea rows={3} value={labResults} onChange={e => setLabResults(e.target.value)}
-              placeholder="CBC: WBC 14k, Hb 10.2, Plt 380&#10;CRP: 85 mg/L | ESR: 62&#10;CXR: cardiomegaly, bilateral infiltrates"
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-200 resize-none transition-all"
-              maxLength={1000}/>
-          </div>
-        </div>
-
-        {error && (
-          <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
-            <AlertCircle size={14} className="flex-shrink-0"/> {error}
-          </div>
-        )}
-
-        <button onClick={handleAnalyze} disabled={isLoading || !caseDescription.trim()}
-          className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-600 to-violet-800 text-white font-bold text-sm flex items-center justify-center gap-2 hover:from-violet-700 hover:to-violet-900 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm">
-          {isLoading ? (
-            <><Loader2 size={16} className="animate-spin"/> Analyzing clinical case...</>
-          ) : (
-            <><BrainCircuit size={16}/> Analyze with AI</>
-          )}
-        </button>
-      </div>
-
-      {/* ── Loading state ── */}
-      {isLoading && (
-        <div className="card-linkedin p-10 text-center space-y-3">
-          <div className="w-16 h-16 rounded-2xl bg-violet-50 flex items-center justify-center mx-auto">
-            <BrainCircuit size={32} className="text-violet-600 animate-pulse"/>
-          </div>
-          <p className="font-bold text-sm text-gray-900">AI is analyzing your case...</p>
-          <p className="text-xs text-gray-500">Generating differential diagnosis, ICD codes & evidence-based recommendations</p>
-        </div>
-      )}
-
-      {/* ── Results ── */}
-      {analysis && !isLoading && (
-        <div className="space-y-4">
-          {/* Summary header */}
-          <div className="card-linkedin p-5 bg-gradient-to-r from-violet-50 to-white border-violet-200">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center flex-shrink-0">
-                <BrainCircuit size={20} className="text-violet-700"/>
-              </div>
-              <div>
-                <p className="text-[11px] font-bold text-violet-500 uppercase tracking-wider mb-0.5">Case Summary</p>
-                <p className="text-sm font-semibold text-gray-900">{analysis.patientSummary}</p>
-              </div>
+            {/* Sessions list */}
+            <div className="max-h-[calc(100vh-260px)] overflow-y-auto">
+              {sessions.length === 0 ? (
+                <div className="px-4 py-6 text-center">
+                  <MessageSquare size={24} className="text-gray-300 mx-auto mb-2"/>
+                  <p className="text-xs text-gray-500">No previous consultations</p>
+                </div>
+              ) : (
+                <div>
+                  <p className="px-4 pt-3 pb-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Recent</p>
+                  {sessions.map(s => (
+                    <button key={s.id} onClick={() => loadSession(s)}
+                      className={`w-full text-left px-4 py-2.5 flex items-center justify-between group transition-colors ${
+                        activeSessionId === s.id ? 'bg-[#EBF5FF] border-r-2 border-[#0A66C2]' : 'hover:bg-[#F3F2EF]'
+                      }`}>
+                      <div className="min-w-0 flex-1">
+                        <p className={`text-xs truncate font-medium ${activeSessionId === s.id ? 'text-[#0A66C2]' : 'text-[rgba(0,0,0,0.8)]'}`}>
+                          {s.title}
+                        </p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">
+                          {new Date(s.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </p>
+                      </div>
+                      <button onClick={e => deleteSession(s.id, e)}
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-all flex-shrink-0 ml-1">
+                        <Trash2 size={11}/>
+                      </button>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
+        </div>
 
-          {/* Red flags */}
-          {analysis.redFlags?.length > 0 && (
-            <div className="card-linkedin p-4 bg-red-50 border-red-300 border-l-4">
-              <div className="flex items-center gap-2 mb-2">
-                <AlertTriangle size={16} className="text-red-600"/>
-                <span className="font-bold text-sm text-red-700 uppercase tracking-wider">⚠ Red Flags — Urgent Attention Required</span>
-              </div>
-              <ul className="space-y-1">
-                {analysis.redFlags.map((flag, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-red-800">
-                    <span className="text-red-500 mt-0.5 flex-shrink-0">•</span> {flag}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+        {/* ══ CHAT AREA ═════════════════════════════════════════════════ */}
+        <main className="flex-1 min-w-0">
+          <div className="card-linkedin flex flex-col" style={{ minHeight: '70vh' }}>
 
-          {/* Differential diagnoses */}
-          {analysis.differentials?.length > 0 && (
-            <Section title={`Differential Diagnoses (${analysis.differentials.length})`}
-              icon={<Stethoscope size={16}/>} accent="text-violet-700" defaultOpen>
-              <div className="space-y-4 pt-4">
-                {analysis.differentials.map((dx) => (
-                  <div key={dx.rank} className={`rounded-xl border p-4 ${dx.rank === 1 ? 'border-violet-200 bg-violet-50/40' : 'border-gray-200 bg-white'}`}>
-                    <div className="flex items-start justify-between gap-3 mb-3">
-                      <div className="flex items-start gap-3">
-                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${dx.rank === 1 ? 'bg-violet-600 text-white' : 'bg-gray-200 text-gray-700'}`}>
-                          {dx.rank}
-                        </div>
-                        <div>
-                          <h3 className="font-bold text-sm text-gray-900">{dx.diagnosis}</h3>
-                          <p className="text-xs text-gray-500 mt-0.5 font-mono">
-                            ICD-10: <span className="font-bold text-gray-700">{dx.icd10Code}</span> — {dx.icd10Description}
-                          </p>
+            {/* Messages area */}
+            <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
+              {messages.length === 0 ? (
+                /* Welcome state */
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <div className="w-16 h-16 rounded-2xl bg-[#EBF5FF] flex items-center justify-center mb-4">
+                    <BrainCircuit size={32} className="text-[#0A66C2]"/>
+                  </div>
+                  <h2 className="text-xl font-bold text-gray-900 mb-1">
+                    {greeting()}, Dr. {doctorName.split(' ')[0]}
+                  </h2>
+                  <p className="text-sm text-gray-500 mb-6 max-w-sm">
+                    Describe a clinical case and I'll provide differential diagnoses, ICD-10 codes, and evidence-based recommendations.
+                  </p>
+                  <div className="flex flex-wrap gap-2 justify-center">
+                    {SUGGESTIONS.map(s => (
+                      <button key={s.label} onClick={() => applySuggestion(s)}
+                        className="flex items-center gap-1.5 px-3.5 py-2 rounded-full border border-[#0A66C2] text-[#0A66C2] text-xs font-medium hover:bg-[#EBF5FF] transition-colors">
+                        <Sparkles size={11}/> {s.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                messages.map(msg => (
+                  <div key={msg.id}>
+                    {msg.role === 'user' ? (
+                      /* User message */
+                      <div className="flex justify-end">
+                        <div className="max-w-[75%] bg-[#0A66C2] text-white rounded-2xl rounded-br-sm px-4 py-3 text-sm leading-relaxed shadow-sm">
+                          {msg.content}
                         </div>
                       </div>
-                      <span className={`flex-shrink-0 px-2.5 py-1 rounded-full border text-[11px] font-bold ${PROB_COLOR[dx.probability] || PROB_COLOR.Low}`}>
-                        {dx.probability}
-                      </span>
-                    </div>
-
-                    {dx.keyDistinguisher && (
-                      <div className="mb-3 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-800 flex items-start gap-1.5">
-                        <Info size={12} className="flex-shrink-0 mt-0.5"/> {dx.keyDistinguisher}
-                      </div>
+                    ) : (
+                      <AIMessageBubble msg={msg}/>
                     )}
+                  </div>
+                ))
+              )}
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {dx.supportingFeatures?.length > 0 && (
-                        <div>
-                          <p className="text-[11px] font-bold text-emerald-600 uppercase tracking-wider mb-1.5">Supporting Features</p>
-                          <ul className="space-y-1">
-                            {dx.supportingFeatures.map((f, i) => (
-                              <li key={i} className="flex items-start gap-1.5 text-xs text-gray-700">
-                                <CheckCircle2 size={11} className="text-emerald-500 flex-shrink-0 mt-0.5"/> {f}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {dx.againstFeatures?.length > 0 && (
-                        <div>
-                          <p className="text-[11px] font-bold text-red-500 uppercase tracking-wider mb-1.5">Against</p>
-                          <ul className="space-y-1">
-                            {dx.againstFeatures.map((f, i) => (
-                              <li key={i} className="flex items-start gap-1.5 text-xs text-gray-600">
-                                <span className="text-red-400 mt-0.5 flex-shrink-0">✗</span> {f}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
+              {/* Loading */}
+              {isLoading && (
+                <div className="flex gap-3 justify-start">
+                  <div className="w-8 h-8 rounded-full bg-[#EBF5FF] flex items-center justify-center flex-shrink-0">
+                    <BrainCircuit size={16} className="text-[#0A66C2] animate-pulse"/>
+                  </div>
+                  <div className="bg-white border border-gray-200 border-l-4 border-l-[#0A66C2] rounded-r-xl rounded-bl-xl px-4 py-3 shadow-sm">
+                    <div className="flex items-center gap-2 text-sm text-gray-500">
+                      <Loader2 size={14} className="animate-spin text-[#0A66C2]"/>
+                      Analyzing clinical case...
                     </div>
                   </div>
-                ))}
-              </div>
-            </Section>
-          )}
+                </div>
+              )}
 
-          {/* Recommended workup */}
-          {analysis.recommendedWorkup && (
-            <Section title="Recommended Workup" icon={<Microscope size={16}/>} accent="text-blue-700" defaultOpen>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
-                {analysis.recommendedWorkup.urgentTests?.length > 0 && (
-                  <div className="col-span-2 bg-red-50 rounded-xl border border-red-200 p-3">
-                    <p className="text-xs font-bold text-red-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                      <AlertTriangle size={12}/> Urgent Tests
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {analysis.recommendedWorkup.urgentTests.map((t, i) => (
-                        <span key={i} className="px-2.5 py-1 rounded-full bg-red-100 text-red-800 text-xs font-medium border border-red-200">{t}</span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {[
-                  { label: 'Laboratory Tests', items: analysis.recommendedWorkup.laboratoryTests, color: 'blue' },
-                  { label: 'Imaging', items: analysis.recommendedWorkup.imaging, color: 'purple' },
-                  { label: 'Special Tests', items: analysis.recommendedWorkup.specialTests, color: 'teal' },
-                ].map(({ label, items, color }) => items?.length > 0 && (
-                  <div key={label} className={`bg-${color}-50 rounded-xl border border-${color}-100 p-3`}>
-                    <p className={`text-xs font-bold text-${color}-700 uppercase tracking-wider mb-2`}>{label}</p>
-                    <ul className="space-y-1">
-                      {items.map((t, i) => (
-                        <li key={i} className="flex items-start gap-1.5 text-xs text-gray-700">
-                          <ArrowRight size={11} className={`text-${color}-500 flex-shrink-0 mt-0.5`}/> {t}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            </Section>
-          )}
+              {/* Error */}
+              {error && (
+                <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
+                  <AlertCircle size={13} className="flex-shrink-0"/> {error}
+                </div>
+              )}
 
-          {/* Treatment considerations */}
-          {analysis.treatmentConsiderations?.length > 0 && (
-            <Section title="Treatment Considerations" icon={<Pill size={16}/>} accent="text-emerald-700">
-              <ul className="space-y-2 pt-4">
-                {analysis.treatmentConsiderations.map((t, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
-                    <CheckCircle2 size={14} className="text-emerald-500 flex-shrink-0 mt-0.5"/> {t}
-                  </li>
-                ))}
-              </ul>
-            </Section>
-          )}
-
-          {/* Evidence-based guidelines */}
-          {analysis.relevantGuidelines?.length > 0 && (
-            <Section title="Evidence-Based Guidelines" icon={<BookOpen size={16}/>} accent="text-amber-700">
-              <div className="space-y-3 pt-4">
-                {analysis.relevantGuidelines.map((g, i) => (
-                  <div key={i} className="p-3 bg-amber-50 rounded-xl border border-amber-100">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold border border-amber-200">{g.organization}</span>
-                      <span className="text-[11px] text-gray-500">{g.year}</span>
-                    </div>
-                    <p className="text-xs font-bold text-gray-900 mb-1">{g.name}</p>
-                    <p className="text-xs text-gray-700 leading-relaxed">{g.keyRecommendation}</p>
-                  </div>
-                ))}
-              </div>
-            </Section>
-          )}
-
-          {/* Follow up */}
-          {analysis.followUpRecommendations?.length > 0 && (
-            <Section title="Follow-up Recommendations" icon={<FlaskConical size={16}/>} accent="text-teal-700">
-              <ul className="space-y-2 pt-4">
-                {analysis.followUpRecommendations.map((f, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
-                    <ArrowRight size={13} className="text-teal-500 flex-shrink-0 mt-0.5"/> {f}
-                  </li>
-                ))}
-              </ul>
-            </Section>
-          )}
-
-          {/* Disclaimer */}
-          <div className="card-linkedin p-4 bg-gray-50 border-gray-200">
-            <div className="flex items-start gap-2 text-xs text-gray-500">
-              <Shield size={14} className="text-gray-400 flex-shrink-0 mt-0.5"/>
-              <p className="leading-relaxed">{analysis.disclaimer}</p>
+              <div ref={messagesEndRef}/>
             </div>
-          </div>
 
-          {/* New analysis button */}
-          <button onClick={reset} className="w-full py-2.5 rounded-xl border-2 border-violet-200 text-violet-700 font-semibold text-sm flex items-center justify-center gap-2 hover:bg-violet-50 transition-colors">
-            <RotateCcw size={14}/> Start New Analysis
-          </button>
-        </div>
-      )}
+            {/* ── Input area ── */}
+            <div className="border-t border-gray-100 px-4 py-3">
+              {/* Patient details toggle */}
+              <button onClick={() => setShowPatientDetails(!showPatientDetails)}
+                className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-[#0A66C2] mb-2 transition-colors">
+                {showPatientDetails ? <ChevronUp size={12}/> : <ChevronDown size={12}/>}
+                Patient details (optional)
+              </button>
+
+              {showPatientDetails && (
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  <input type="text" value={patientAge} onChange={e => setPatientAge(e.target.value)}
+                    placeholder="Age" maxLength={10}
+                    className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs outline-none focus:border-[#0A66C2] bg-[#F3F2EF]"/>
+                  <select value={patientGender} onChange={e => setPatientGender(e.target.value)}
+                    className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs outline-none focus:border-[#0A66C2] bg-[#F3F2EF]">
+                    <option value="">Gender</option>
+                    <option>Male</option><option>Female</option><option>Other</option>
+                  </select>
+                  <select value={specialty} onChange={e => setSpecialty(e.target.value)}
+                    className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs outline-none focus:border-[#0A66C2] bg-[#F3F2EF]">
+                    {['General Medicine','Cardiology','Pulmonology','Neurology','Gastroenterology','Nephrology','Endocrinology','Rheumatology','Oncology','Infectious Disease','Pediatrics','Emergency Medicine','Psychiatry','Dermatology','Orthopedics'].map(s => <option key={s}>{s}</option>)}
+                  </select>
+                </div>
+              )}
+
+              <div className="flex items-end gap-2">
+                <textarea
+                  ref={textareaRef}
+                  value={input}
+                  onChange={handleTextareaChange}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Describe the clinical case... (e.g. 55-year-old male with 3-day history of dyspnea and bilateral leg swelling...)"
+                  rows={1}
+                  disabled={isLoading}
+                  className="flex-1 px-4 py-2.5 border border-gray-300 rounded-2xl text-sm outline-none focus:border-[#0A66C2] focus:ring-1 focus:ring-[#0A66C2]/20 resize-none transition-all bg-white disabled:opacity-50"
+                  style={{ maxHeight: '120px', overflowY: 'auto' }}
+                  maxLength={3000}
+                />
+                <button onClick={handleSend} disabled={!input.trim() || isLoading}
+                  className="w-10 h-10 rounded-full bg-[#0A66C2] text-white flex items-center justify-center hover:bg-[#004182] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0">
+                  {isLoading ? <Loader2 size={16} className="animate-spin"/> : <Send size={16}/>}
+                </button>
+              </div>
+              <p className="text-[10px] text-gray-400 mt-1.5 text-center">
+                For licensed physicians only · AI-assisted decision support · Not a substitute for clinical judgment
+              </p>
+            </div>
+
+          </div>
+        </main>
+
+      </div>
     </div>
   );
 };

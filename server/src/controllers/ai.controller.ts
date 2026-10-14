@@ -96,13 +96,13 @@ export class AIController {
       const groq = new Groq({ apiKey: groqApiKey });
 
       const response = await groq.chat.completions.create({
-        model: 'meta-llama/llama-4-maverick-17b-128e-instruct',
+        model: 'llama-3.3-70b-versatile',
         messages: [
           { role: 'system', content: CLINICAL_SYSTEM_PROMPT },
           { role: 'user', content: casePrompt },
         ],
         max_tokens: 2000,
-        temperature: 0.2, // Low temperature for consistent clinical reasoning
+        temperature: 0.2,
         response_format: { type: 'json_object' } as any,
       });
 
