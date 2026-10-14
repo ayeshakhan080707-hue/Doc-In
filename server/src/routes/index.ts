@@ -15,6 +15,7 @@ import groupsRoutes from './groups.routes.js';
 import cmeRoutes from './cme.routes.js';
 import eventsRoutes from './events.routes.js';
 import newsRoutes from './news.routes.js';
+import aiRoutes from './ai.routes.js';
 
 const apiRouter = Router();
 
@@ -34,5 +35,6 @@ apiRouter.use('/groups', groupsRoutes);
 apiRouter.use('/cme', cmeRoutes);
 apiRouter.use('/events', eventsRoutes);
 apiRouter.use('/news', newsRoutes);
+apiRouter.use('/ai', aiRoutes);
 
 export default apiRouter;

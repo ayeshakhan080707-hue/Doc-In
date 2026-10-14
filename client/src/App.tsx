@@ -18,6 +18,7 @@ import { DoctorProfilePage } from './pages/profile/DoctorProfilePage';
 import { PublicDoctorProfilePage } from './pages/profile/PublicDoctorProfilePage';
 import { CMEDashboard } from './pages/profile/CMEDashboard';
 import { DrugLibraryPage } from './pages/drugs/DrugLibraryPage';
+import { AIClinicalAssistant } from './pages/ai/AIClinicalAssistant';
 import { NetworkPage } from './pages/network/NetworkPage';
 import { MessagingPage } from './pages/messaging/MessagingPage';
 import { JobsPage } from './pages/jobs/JobsPage';
@@ -183,6 +184,7 @@ export const App: React.FC = () => {
                   <Route path="/subscription" element={<AuthRequired><SubscriptionPage /></AuthRequired>} />
                   <Route path="/cme" element={<AuthRequired><CMEDashboard /></AuthRequired>} />
                   <Route path="/drug-library" element={<AuthRequired><DrugLibraryPage /></AuthRequired>} />
+                  <Route path="/ai-assistant" element={<AuthRequired><AIClinicalAssistant /></AuthRequired>} />
 
                   {/* Professional panels */}
                   <Route path="/recruiter" element={<ProfessionalRequired allowedRoles={['RECRUITER']}><RecruiterPanel /></ProfessionalRequired>} />

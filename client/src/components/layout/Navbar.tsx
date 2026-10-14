@@ -4,6 +4,7 @@ import {
   Home, Users, Briefcase, MessageSquare, Bell, Search,
   Building2, UserCheck, Settings, LogOut, ChevronDown,
   X, LogIn, Calendar, Star, Award, Loader2, ShieldCheck, ArrowRight,
+  BrainCircuit,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { apiClient } from '../../api/client';
@@ -436,6 +437,15 @@ export const Navbar: React.FC = () => {
                   </div>
                 )}
               </div>
+
+              {/* AI Clinical Assistant */}
+              <NavTab
+                to="/ai-assistant"
+                icon={<BrainCircuit size={20} />}
+                label="AI"
+                isActive={isActive('/ai-assistant')}
+                accentColor="text-violet-600 hover:text-violet-800"
+              />
 
               {/* Profile Dropdown */}
               <div className="relative" ref={profileRef}>
